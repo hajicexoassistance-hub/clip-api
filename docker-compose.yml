@@ -2,9 +2,14 @@ version: '3.8'
 
 services:
   app:
-    build: .
+    image: ghcr.io/${GITHUB_REPOSITORY:-hajicexoassistance-hub/clip-api}:latest
     container_name: portrait-app
     restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     environment:
       - PORTRAITGEN_BASE_URL=/files/
       - PORTRAITGEN_DB_PATH=/app/data/job_history.db
