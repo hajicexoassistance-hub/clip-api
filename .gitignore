@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Local Environment
+.env
+
+
+# Local Binaries and Executables
+*.exe
+*.bat
+*.b64
+
+# Database and Logs
+*.db
+*.log
+data/
+
+# Output and Assets
+output/
+assets/
+*.mp4
+*.srt
+*.ass
+samplevideo.mp4
+
+# Project Specific
+.gemini/
+.agent/
+brain/
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db

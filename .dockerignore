@@ -1,0 +1,29 @@
+# Projects & Local Data
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.env
+
+# Project specific local files
+data/
+output/
+*.db
+*.log
+*.exe
+*.bat
+*.b64
+samplevideo.mp4
+test_gpu.mp4
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore

@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+requests
+python-dotenv
+yt-dlp
+pydantic
+scenedetect[opencv]
+ultralytics
+opencv-python
+numpy
