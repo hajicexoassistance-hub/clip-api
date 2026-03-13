@@ -13,7 +13,8 @@ DB_PATH = os.environ.get('PORTRAITGEN_DB_PATH', 'data/job_history.db')
 DATA_DIR = os.path.dirname(DB_PATH)
 LOG_FILE = os.path.join(DATA_DIR, 'pipeline.log')
 PORTRAITGEN_FFMPEG_THREADS = os.getenv("PORTRAITGEN_FFMPEG_THREADS", "8")
-USE_GPU = os.getenv("PORTRAITGEN_USE_GPU", "false").lower() == "true"
+USE_GPU_VAL = os.getenv("PORTRAITGEN_USE_GPU", "false").lower()
+USE_GPU = "legacy" if USE_GPU_VAL == "legacy" else (USE_GPU_VAL == "true")
 BLUR_STRENGTH = os.environ.get('PORTRAITGEN_BLUR', '3')
 OUTPUT_SCALE = os.environ.get('PORTRAITGEN_OUTPUT_SCALE', '720x1280')  # default vertical for socials
 FFMPEG_PRESET = os.environ.get('PORTRAITGEN_FFMPEG_PRESET', 'veryfast')
@@ -338,9 +339,16 @@ def process_video(job_id, video_file, srt_file, output_dir, preset_name='default
     final_filter = filter_str.replace("[outv]", f"[vfinal];[vfinal]ass='{ass_path_escaped}'{scale_filter},setsar=1,format=yuv420p[final]")
 
     # 6. Render with CPU optimizations (ultrafast preset)
-    # Gunakan NVENC jika GPU diaktifkan
-    v_encoder = "h264_nvenc" if USE_GPU else "libx264"
-    v_params = ["-crf", "20", "-preset", "veryfast"] if not USE_GPU else ["-preset", "p4", "-tune", "hq"]
+    # Gunakan NVENC jika GPU diaktifkan, atau h264_mf untuk GPU lama (Legacy)
+    if USE_GPU == "legacy":
+        v_encoder = "h264_mf"
+        v_params = [] # h264_mf has very limited params via CLI
+    elif USE_GPU:
+        v_encoder = "h264_nvenc"
+        v_params = ["-crf", "20", "-preset", "veryfast"]
+    else:
+        v_encoder = "libx264"
+        v_params = ["-crf", "20", "-preset", "veryfast"]
     
     ffmpeg_burn_cmd = [
         'ffmpeg', "-y",
