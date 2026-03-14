@@ -148,50 +148,50 @@ def process_pipeline(job_id, url, background_tasks: BackgroundTasks, preset='def
     # Use semaphore to prevent overwhelming the CPU
     with job_semaphore:
         def progress_callback(percent, status_text):
+            try:
+                with sqlite3.connect(DB_PATH) as conn:
+                    conn.execute('UPDATE jobs SET progress_percent=?, status=? WHERE job_id=?',
+                                 (percent, status_text, job_id))
+                    conn.commit()
+            except Exception as e:
+                print(f"[CALLBACK-ERROR] {job_id}: {str(e)}")
+
         try:
-            with sqlite3.connect(DB_PATH) as conn:
-                conn.execute('UPDATE jobs SET progress_percent=?, status=? WHERE job_id=?',
-                             (percent, status_text, job_id))
-                conn.commit()
-        except Exception as e:
-            print(f"[CALLBACK-ERROR] {job_id}: {str(e)}")
-
-    try:
-        # Initial status
-        progress_callback(5, 'Memulai Analisis')
-        
-        # Run actual pipeline (Stage 1) with callback
-        _log_pipeline(f"Starting Stage 1 for job {job_id}")
-        from smartcrop.api_pipeline import run_pipeline_stage1
-        _log_pipeline(f"Stage 1 code loaded for job {job_id}")
-        result = run_pipeline_stage1(job_id, url, OUTPUT_DIR, preset, progress_callback=progress_callback)
-        
-        # After pipeline, update DB with results
-        title = result.get('title')
-        duration = result.get('duration')
-        error_message = result.get('error_message')
-        
-        # Mark as completed or failed
-        final_status = 'completed' if not error_message else 'failed'
-        progress = 100 if not error_message else 0
-        
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute('''UPDATE jobs SET status=?, progress_percent=?, error_message=?, title=?, duration=? WHERE job_id=?''',
-                         (final_status, progress, error_message, title, duration, job_id))
-            conn.commit()
-
-        # AUTOMATION: Trigger sequence synchronously within this background task
-        if final_status == 'completed' and result.get('analysis'):
-            _log_pipeline(f"Automation: Detected topics for job {job_id}. Starting sequencer...")
-            _auto_clip_sequencer(job_id, result['analysis'])
+            # Initial status
+            progress_callback(5, 'Memulai Analisis')
             
-    except Exception as e:
-        import traceback
-        err_msg = traceback.format_exc()
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute('UPDATE jobs SET status=?, error_message=? WHERE job_id=?',
-                         ('failed', err_msg, job_id))
-            conn.commit()
+            # Run actual pipeline (Stage 1) with callback
+            _log_pipeline(f"Starting Stage 1 for job {job_id}")
+            from smartcrop.api_pipeline import run_pipeline_stage1
+            _log_pipeline(f"Stage 1 code loaded for job {job_id}")
+            result = run_pipeline_stage1(job_id, url, OUTPUT_DIR, preset, progress_callback=progress_callback)
+            
+            # After pipeline, update DB with results
+            title = result.get('title')
+            duration = result.get('duration')
+            error_message = result.get('error_message')
+            
+            # Mark as completed or failed
+            final_status = 'completed' if not error_message else 'failed'
+            progress = 100 if not error_message else 0
+            
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute('''UPDATE jobs SET status=?, progress_percent=?, error_message=?, title=?, duration=? WHERE job_id=?''',
+                             (final_status, progress, error_message, title, duration, job_id))
+                conn.commit()
+
+            # AUTOMATION: Trigger sequence synchronously within this background task
+            if final_status == 'completed' and result.get('analysis'):
+                _log_pipeline(f"Automation: Detected topics for job {job_id}. Starting sequencer...")
+                _auto_clip_sequencer(job_id, result['analysis'])
+                
+        except Exception as e:
+            import traceback
+            err_msg = traceback.format_exc()
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute('UPDATE jobs SET status=?, error_message=? WHERE job_id=?',
+                             ('failed', err_msg, job_id))
+                conn.commit()
 
 class DownloadRequest(BaseModel):
     url: str
@@ -717,10 +717,28 @@ def get_logs(lines: int = Query(100)):
     if not os.path.exists(log_file):
         return {"logs": ["Log file not found."]}
     try:
-        with open(log_file, 'r', encoding='utf-8') as f:
-            content = f.readlines()
-            lines_to_show = int(lines)
-            return {"logs": content[-lines_to_show:]}
+        # Efficient tail reading
+        def tail(f, n):
+            f.seek(0, 2)
+            file_size = f.tell()
+            buffer_size = 1024
+            buffer = ""
+            lines_found = []
+            
+            pos = file_size
+            while pos > 0 and len(lines_found) <= n:
+                pos = max(0, pos - buffer_size)
+                f.seek(pos)
+                chunk = f.read(min(buffer_size, file_size - pos))
+                buffer = chunk + buffer
+                lines_found = buffer.splitlines()
+                if len(lines_found) > n:
+                    break
+            return lines_found[-n:]
+
+        with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+            logs = tail(f, lines)
+            return {"logs": logs}
     except Exception as e:
         print(f"[LOG-READ-ERROR] {str(e)}")
         return {"logs": [f"Error reading logs: {str(e)}"]}
