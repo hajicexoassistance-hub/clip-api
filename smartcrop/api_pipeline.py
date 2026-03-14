@@ -141,8 +141,21 @@ def extract_audio(job_id, video_file, output_dir):
         log_event("ffmpeg mp3 convert timed out")
         raise RuntimeError("ffmpeg mp3 convert timed out")
     except subprocess.CalledProcessError as e:
-        log_event(f"ffmpeg mp3 convert failed: {e.stderr}")
-        raise RuntimeError(f"ffmpeg mp3 error: {e.stderr}")
+        log_event(f"ffmpeg mp3 convert failed: {e.stderr}. Trying fallback to silence.")
+        # Fallback: Create silent audio if source has no audio stream
+        # Get duration first
+        try:
+            dur_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', str(video_file)]
+            dur = subprocess.check_output(dur_cmd).decode().strip()
+            silence_cmd = [
+                'ffmpeg', '-y', '-f', 'lavfi', '-i', f'anullsrc=r=16000:cl=mono:d={dur}',
+                '-c:a', 'libmp3lame', '-b:a', '32k', str(audio_file_mp3)
+            ]
+            subprocess.run(silence_cmd, check=True, capture_output=True, timeout=30)
+        except Exception as e2:
+            log_event(f"Silence fallback failed: {e2}")
+            raise RuntimeError(f"ffmpeg mp3 error: {e.stderr}")
+            
     if not audio_file_mp3.exists() or audio_file_mp3.stat().st_size == 0:
         log_event(f"MP3 file missing or empty: {audio_file_mp3}")
         raise RuntimeError(f"MP3 file missing or empty: {audio_file_mp3}")
@@ -345,10 +358,10 @@ def process_video(job_id, video_file, srt_file, output_dir, preset_name='default
         v_params = [] # h264_mf has very limited params via CLI
     elif USE_GPU:
         v_encoder = "h264_nvenc"
-        v_params = ["-crf", "20", "-preset", "veryfast"]
+        v_params = ["-profile:v", "high", "-level", "4.1", "-preset", "p4", "-tune", "hq"]
     else:
         v_encoder = "libx264"
-        v_params = ["-crf", "20", "-preset", "veryfast"]
+        v_params = ["-profile:v", "high", "-level", "4.1", "-crf", "20", "-preset", "veryfast"]
     
     ffmpeg_burn_cmd = [
         'ffmpeg', "-y",
@@ -358,8 +371,6 @@ def process_video(job_id, video_file, srt_file, output_dir, preset_name='default
         "-map", "0:a?",
         "-c:v", v_encoder
     ] + v_params + [
-        "-profile:v", "high",
-        "-level", "4.1",
         "-movflags", "+faststart",
         "-c:a", "aac",
         "-b:a", "192k",
@@ -376,6 +387,10 @@ def process_video(job_id, video_file, srt_file, output_dir, preset_name='default
             f.flush()
             result = subprocess.run(ffmpeg_burn_cmd, stdout=f, stderr=subprocess.STDOUT, text=True, timeout=7200)
             f.write(f"\n--- FFmpeg finished for {job_id} with code {result.returncode} ---\n")
+            
+            if result.returncode != 0:
+                raise RuntimeError(f"FFmpeg failed with code {result.returncode}. Check pipeline.log for details.")
+                
         return portrait_file, duration
     except Exception as e:
         log_event(f"FFmpeg render error: {e}")
