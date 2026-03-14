@@ -5,10 +5,16 @@ from fastapi import FastAPI, BackgroundTasks, Query, HTTPException, Depends, Hea
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
-import uuid, datetime, sqlite3, os, json
+import uuid, datetime, sqlite3, os, json, asyncio
+from threading import Semaphore
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+# Limit parallel processing to protect CPU/RAM on small VPS
+# 1 heavy job at a time is safest for 2 cores / 4GB RAM
+MAX_PARALLEL_JOBS = int(os.environ.get('PORTRAITGEN_MAX_PARALLEL_JOBS', '1'))
+job_semaphore = Semaphore(MAX_PARALLEL_JOBS)
 
 app = FastAPI()
 
@@ -139,7 +145,9 @@ def _auto_clip_sequencer(job_id, analysis_data):
 def process_pipeline(job_id, url, background_tasks: BackgroundTasks, preset='default'):
     from smartcrop.api_pipeline import run_pipeline
     
-    def progress_callback(percent, status_text):
+    # Use semaphore to prevent overwhelming the CPU
+    with job_semaphore:
+        def progress_callback(percent, status_text):
         try:
             with sqlite3.connect(DB_PATH) as conn:
                 conn.execute('UPDATE jobs SET progress_percent=?, status=? WHERE job_id=?',
@@ -172,10 +180,10 @@ def process_pipeline(job_id, url, background_tasks: BackgroundTasks, preset='def
                          (final_status, progress, error_message, title, duration, job_id))
             conn.commit()
 
-        # AUTOMATION: Trigger sequence in background
+        # AUTOMATION: Trigger sequence synchronously within this background task
         if final_status == 'completed' and result.get('analysis'):
             _log_pipeline(f"Automation: Detected topics for job {job_id}. Starting sequencer...")
-            background_tasks.add_task(_auto_clip_sequencer, job_id, result['analysis'])
+            _auto_clip_sequencer(job_id, result['analysis'])
             
     except Exception as e:
         import traceback
