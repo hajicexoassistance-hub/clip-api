@@ -9,7 +9,7 @@ from pathlib import Path
 BASE_URL = "http://localhost:8000"
 # We don't need a real API key since it's disabled for testing, but we'll try to find it
 API_KEY = "any_key" 
-VIDEO_URL = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_1MB.mp4" # Direct link for E2E stability
+VIDEO_URL = "https://www.youtube.com/watch?v=aqz-KE-bpKQ" # Big Buck Bunny on YouTube
 
 def log(m):
     print(f"[*] {m}", flush=True)
@@ -53,18 +53,19 @@ def test_workflow():
     for _ in range(60): # 5 minutes max
         r = requests.get(f"{BASE_URL}/job/{job_id}/results", headers=headers)
         if r.status_code == 200:
-            results = r.json()
-            if results and len(results) > 0:
-                log(f"Found {len(results)} clips in progress/completed.")
+            data = r.json()
+            clips = data.get("clips", [])
+            if clips and len(clips) > 0:
+                log(f"Found {len(clips)} clips in progress/completed.")
                 # Look for at least one 'completed'
-                completed = [c for c in results if c['status'] == 'completed']
+                completed = [c for c in clips if c.get('status') == 'completed']
                 if completed:
                     log("SUCCESS: At least one clip completed!")
                     log(json.dumps(completed, indent=2))
                     return
                 
                 # Check for failure in clips
-                failed = [c for c in results if c['status'] == 'failed']
+                failed = [c for c in clips if c.get('status') == 'failed']
                 if failed:
                     log("ERROR: One or more clips failed.")
                     log(json.dumps(failed, indent=2))

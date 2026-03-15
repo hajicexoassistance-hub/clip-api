@@ -355,10 +355,10 @@ def process_video(job_id, video_file, srt_file, output_dir, preset_name='default
     # Gunakan NVENC jika GPU diaktifkan, atau h264_mf untuk GPU lama (Legacy)
     if USE_GPU == "legacy":
         v_encoder = "h264_mf"
-        v_params = [] # h264_mf has very limited params via CLI
+        v_params = ["-b:v", "6M", "-quality", "100"] 
     elif USE_GPU:
         v_encoder = "h264_nvenc"
-        v_params = ["-profile:v", "high", "-level", "4.1", "-preset", "p4", "-tune", "hq"]
+        v_params = ["-profile:v", "high", "-level", "4.1", "-preset", "p4", "-tune", "hq", "-b:v", "6M", "-rc", "vbr", "-cq", "20"]
     else:
         v_encoder = "libx264"
         v_params = ["-profile:v", "high", "-level", "4.1", "-crf", "20", "-preset", "veryfast"]
