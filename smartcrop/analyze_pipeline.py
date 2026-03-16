@@ -90,7 +90,8 @@ ATURAN PENTING:
 - Waktu dalam format detik (misal: 65.5 artinya menit 1 detik 5.5)
 - Satu topik bisa tersebar di beberapa segment
 - TOTAL DURASI semua segment dalam satu topik HARUS antara 60 detik (1 menit) sampai 180 detik (3 menit)
-- Jika pembahasan topik lebih dari 3 menit, pilih bagian yang PALING MENARIK saja
+- Jika pembahasan topik lebih dari 3 menit, pilih bagian yang PALING MENARIK saja,
+- jangan sampai lebih dari 180 detik sama sekali, batas maksimal aman 179 detik
 - Jika pembahasan topik kurang dari 1 menit, gabungkan dengan konteks sekitarnya agar minimal 1 menit
 - Pastikan setiap segment dimulai dan diakhiri di titik yang natural (awal/akhir kalimat)
 
@@ -294,6 +295,24 @@ def produce_clip(job_id: str, output_dir: str, selected_indices: list, analysis_
     # It will automatically create a matching .ass file.
     final_portrait, duration = process_video(job_id, selected_raw_path, clip_srt, job_dir, output_filename=final_clip_filename)
     
+    # R2 UPLOAD & CLEANUP
+    r2_url = None
+    try:
+        from .storage_service import get_storage_service
+        storage = get_storage_service()
+        if storage.client:
+            log_event(f"Stage 2: Uploading {final_clip_filename} to R2...")
+            remote_path = f"jobs/{job_id}/{final_clip_filename}"
+            r2_url = storage.upload_file(str(final_portrait), remote_path)
+            
+            # If upload successful, delete local final portrait
+            storage.delete_local_file(final_portrait)
+            # Also delete the .ass file if it exists
+            ass_file = final_portrait.with_suffix('.ass')
+            storage.delete_local_file(ass_file)
+    except Exception as e:
+        log_event(f"Stage 2: R2 Upload/Cleanup FAILED: {e}")
+
     # Cleanup temp files for this clip
     try:
         selected_raw_path.unlink(missing_ok=True)
@@ -305,6 +324,7 @@ def produce_clip(job_id: str, output_dir: str, selected_indices: list, analysis_
     return {
         'clip_id': clip_id,
         'clip_filename': final_clip_filename,
+        'r2_url': r2_url,
         'draft_judul': ' | '.join([t for t in metadata["title"] if t]),
         'draft_caption': '\n\n'.join([c for c in metadata["caption"] if c]),
         'draft_hashtag': ' '.join(sorted(metadata["hashtags"])),

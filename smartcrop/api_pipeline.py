@@ -162,9 +162,22 @@ def extract_audio(job_id, video_file, output_dir):
     return audio_file_mp3
 
 def transcribe_audio(job_id, audio_file, output_dir):
+    implementation = os.environ.get('PORTRAITGEN_WHISPER_IMPLEMENTATION', 'external').lower()
+    srt_file = Path(output_dir) / 'subtitle.srt'
+    
+    if implementation == 'local':
+        log_event(f"Using LOCAL Whisper for job {job_id}")
+        try:
+            from .local_whisper import get_whisper_service
+            service = get_whisper_service()
+            service.transcribe(audio_file, srt_file)
+            return srt_file
+        except Exception as e:
+            log_event(f"Local Whisper failed: {e}. Falling back to external API if possible.")
+            # Fall through to external if local fails
+
     sumopod_url = 'https://ai.sumopod.com/v1/audio/transcriptions'
     api_key = os.environ.get('SUMOPOD_API_KEY')
-    srt_file = Path(output_dir) / 'subtitle.srt'
     
     if not api_key:
         raise RuntimeError('No API key for Sumopod')

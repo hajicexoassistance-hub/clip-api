@@ -114,8 +114,8 @@ def _auto_clip_sequencer(job_id, analysis_data):
             # Render the clip
             clip_result = produce_clip(job_id, OUTPUT_DIR, [i], analysis_data, clip_id=clip_id)
             
-            # Build response with URL
-            clip_url = f"{BASE_URL}{job_id}/{clip_result['clip_filename']}"
+            # Build response with URL (Prefer R2 URL)
+            clip_url = clip_result.get('r2_url') or f"{BASE_URL}{job_id}/{clip_result['clip_filename']}"
             
             # Update analysis_jobs with success
             with sqlite3.connect(DB_PATH) as conn:
@@ -140,6 +140,18 @@ def _auto_clip_sequencer(job_id, analysis_data):
             except: pass
     
     _log_pipeline(f"Automation: Finished all {len(topics)} topics for job {job_id}")
+    
+    # NEW: Automated cleanup of the entire job directory after successful sequencing
+    try:
+        from smartcrop.storage_service import get_storage_service
+        storage = get_storage_service()
+        job_dir = os.path.join(OUTPUT_DIR, job_id)
+        if os.path.exists(job_dir):
+            import shutil
+            shutil.rmtree(job_dir, ignore_errors=True)
+            _log_pipeline(f"Automation: Cleaned up local job directory for {job_id}")
+    except Exception as e:
+        _log_pipeline(f"Automation: Final cleanup failed: {e}")
 
 # Dummy pipeline (replace with actual pipeline call)
 def process_pipeline(job_id, url, background_tasks: BackgroundTasks, preset='default'):
@@ -524,8 +536,8 @@ def clip_job(req: ClipRequest, background_tasks: BackgroundTasks):
                 # Panggil produce_clip (Stage 2)
                 clip_result = render_clip(req.job_id, OUTPUT_DIR, req.topics, analysis_data, clip_id=clip_id)
 
-                # Build response with URL
-                clip_url = f"{BASE_URL}{req.job_id}/{clip_result['clip_filename']}"
+                # Build response with URL (Prefer R2 URL)
+                clip_url = clip_result.get('r2_url') or f"{BASE_URL}{req.job_id}/{clip_result['clip_filename']}"
 
                 # Update DB
                 _log_pipeline(f"Clip complete for job {req.job_id}: {clip_result['clip_filename']}")
